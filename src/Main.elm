@@ -5,6 +5,7 @@ import Browser
 import Browser.Events as Events
 import Html exposing (Html, pre, text)
 import Html.Attributes as Attr
+import Html.Events as E
 import Http
 import Platform.Cmd as Cmd
 import Random
@@ -61,6 +62,7 @@ type Msg
     = NoOp
     | GotAgents (List Agent)
     | Tick Posix
+    | Reset
 
 
 randomAgent : Int -> Int -> Random.Generator Agent
@@ -70,10 +72,10 @@ randomAgent numConnections maxConnection =
             Random.list 10 (Random.int 0 maxConnection)
 
         thresh =
-            Random.int 0 20
+            Random.int 0 10
 
         rstate =
-            Random.weighted ( 90, Active ) [ ( 90, Passive ) ]
+            Random.weighted ( 1, Active ) [ ( 100, Passive ) ]
     in
     Random.map3 (\i cs state -> Agent (AgentState state i cs)) thresh connections rstate
 
@@ -88,7 +90,7 @@ table items =
             sqrt (toFloat n) |> floor
 
         indexed =
-            List.map2 (\x y -> (x,y)) (List.range 0 n) items
+            List.map2 (\x y -> ( x, y )) (List.range 0 n) items
 
         rowNumbers =
             List.range 0 side
@@ -101,10 +103,9 @@ table items =
                             nRow * side
 
                         slice =
-                            List.filter (\( i, _ ) -> i > i0 && i < (i0 + side)) indexed |> List.map (\(_,x) -> x)
-
+                            List.filter (\( i, _ ) -> i > i0 && i < (i0 + side)) indexed |> List.map (\( _, x ) -> x)
                     in
-                    Html.tr [] (List.map (\item -> Html.td [] [item]) slice)
+                    Html.tr [] (List.map (\item -> Html.td [] [ item ]) slice)
                 )
                 rowNumbers
     in
@@ -114,10 +115,10 @@ table items =
 randomAgents =
     let
         num =
-            100
+            900
 
         numConnections =
-            num // 10
+            2
     in
     Random.list num (randomAgent numConnections num)
 
@@ -176,29 +177,64 @@ generateAgents =
     Random.generate GotAgents randomAgents
 
 
+wrap : Int -> Int -> Int -> Int
+wrap low high x =
+    let
+        range =
+            low - high |> abs
+
+        modded =
+            remainderBy (x - low) range
+    in
+    if modded < 0 then
+        high + x
+
+    else
+        low + x
+
+
+neighbours : Int -> Int -> Int -> List Int
+neighbours n max index =
+    List.range 0 n |> List.map ((\x -> x - (n // 2)) >> wrap 0 max)
+
+
 update : Msg -> Model -> ( Model, Cmd Msg )
 update msg model =
     case msg of
         NoOp ->
             ( model, Cmd.none )
 
+        Reset ->
+            ( model, generateAgents )
+
         GotAgents agents ->
-            ( { model | agents = Array.fromList agents }, Cmd.none )
+            let
+                max =
+                    List.length agents
+
+                f idx (Agent agent) =
+                    Agent { agent | connections = agent.connections ++ neighbours 8 max idx }
+
+                connected =
+                    List.indexedMap f agents
+            in
+            ( { model | agents = Array.fromList connected }, Cmd.none )
 
         Tick time ->
-            if remainderBy 60 model.t == 0 then
+            if remainderBy 4 model.t == 0 then
                 let
                     newAgents =
                         Array.map (\agent -> evaluate agent model) model.agents
                 in
-                    ( { model
-                          | t = model.t + 1
-                          , agents = newAgents
-                      }
-                    , Cmd.none
-                    )
+                ( { model
+                    | t = model.t + 1
+                    , agents = newAgents
+                  }
+                , Cmd.none
+                )
+
             else
-                ({ model | t = model.t + 1}, Cmd.none)
+                ( { model | t = model.t + 1 }, Cmd.none )
 
 
 
@@ -218,24 +254,27 @@ viewAgent : Agent -> Html Msg
 viewAgent (Agent state) =
     let
         t =
-            String.fromInt state.threshold |>
-                                             (\str ->
-                                                  if String.length str == 1 then
-                                                      "0" ++ str
-                                                  else str)
+            String.fromInt state.threshold
+                |> (\str ->
+                        if String.length str == 1 then
+                            "0" ++ str
 
-        (s,color) =
+                        else
+                            str
+                   )
+
+        ( s, color ) =
             case state.state of
                 Active ->
-                    ("x","green")
+                    ( "x", "green" )
 
                 Passive ->
-                    (".","red")
+                    ( ".", "red" )
 
-        string = [ "(", s, ":", t, ")" ] |> String.join "" 
+        string =
+            [ "(", s, ":", t, ")" ] |> String.join ""
     in
-    Html.div [ Attr.style "color" color ] [ text string ] 
-        
+    Html.div [ Attr.style "color" color ] [ text string ]
 
 
 viewTime : Int -> Html Msg
@@ -255,6 +294,9 @@ view model =
 
         ls ->
             Html.div []
-                [ viewTime model.t
+                [ Html.button [ E.onClick Reset ]
+                    [ text "reset" ]
+                , viewTime
+                    model.t
                 , lst |> table
                 ]
