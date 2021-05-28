@@ -23,6 +23,13 @@ import Time exposing (Posix)
 -- MAIN
 
 
+totalNumber = 900
+nNeighbours = 8
+startCells = 1
+                          
+              
+                 
+
 main =
     Browser.element
         { init = init
@@ -51,6 +58,7 @@ type alias AgentState =
     { state : State
     , threshold : Int
     , connections : List Int
+    , birth : Int
     }
 
 
@@ -72,12 +80,12 @@ randomAgent numConnections maxConnection =
             Random.list 10 (Random.int 0 maxConnection)
 
         thresh =
-            Random.int 0 10
+            Random.int 1 10
 
         rstate =
-            Random.weighted ( 1, Active ) [ ( 100, Passive ) ]
+            Random.weighted ( 10, Active ) [ ( 100, Passive ) ]
     in
-    Random.map3 (\i cs state -> Agent (AgentState state i cs)) thresh connections rstate
+    Random.map3 (\i cs state -> Agent (AgentState state i cs 0)) thresh connections rstate
 
 
 table : List (Html Msg) -> Html Msg
@@ -115,7 +123,7 @@ table items =
 randomAgents =
     let
         num =
-            900
+           totalNumber
 
         numConnections =
             2
@@ -123,15 +131,26 @@ randomAgents =
     Random.list num (randomAgent numConnections num)
 
 
-agentTrigger : Int -> Agent -> Agent
-agentTrigger value (Agent st) =
+agentTrigger : Int -> Int -> Agent -> Agent
+agentTrigger now value (Agent st) =
     case st.state of
         Active ->
-            Agent st
+            let age =
+                    (now - st.birth) > (value * 4)
+
+                overStimulated =
+                    value > (st.threshold + 1)
+            in
+            case (age,overStimulated) of
+                (True,True) ->
+                    Agent { st | state = Passive }
+
+                (_,_) ->
+                    Agent st
 
         Passive ->
             if value > st.threshold then
-                Agent { st | state = Active }
+                Agent { st | state = Active, birth = now}
 
             else
                 Agent { st | state = Passive }
@@ -158,7 +177,7 @@ evaluate (Agent agent) model =
                 0
                 agent.connections
     in
-    agentTrigger connectedAgents (Agent agent)
+    agentTrigger model.t connectedAgents (Agent agent)
 
 
 init : () -> ( Model, Cmd Msg )
@@ -213,7 +232,7 @@ update msg model =
                     List.length agents
 
                 f idx (Agent agent) =
-                    Agent { agent | connections = agent.connections ++ neighbours 8 max idx }
+                    Agent { agent | connections = agent.connections ++ neighbours nNeighbours max idx }
 
                 connected =
                     List.indexedMap f agents
@@ -255,13 +274,7 @@ viewAgent (Agent state) =
     let
         t =
             String.fromInt state.threshold
-                |> (\str ->
-                        if String.length str == 1 then
-                            "0" ++ str
-
-                        else
-                            str
-                   )
+     
 
         ( s, color ) =
             case state.state of
@@ -274,7 +287,7 @@ viewAgent (Agent state) =
         string =
             [ "(", s, ":", t, ")" ] |> String.join ""
     in
-    Html.div [ Attr.style "color" color ] [ text string ]
+    Html.div [ Attr.style "background-color" color, Attr.style "width" "20px" ] [ text string ]
 
 
 viewTime : Int -> Html Msg
@@ -293,7 +306,7 @@ view model =
             text "nothing to see here"
 
         ls ->
-            Html.div []
+            Html.div [ Attr.style "font-size" "8px"]
                 [ Html.button [ E.onClick Reset ]
                     [ text "reset" ]
                 , viewTime
