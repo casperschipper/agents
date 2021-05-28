@@ -80,7 +80,7 @@ randomAgent numConnections maxConnection =
             Random.list 10 (Random.int 0 maxConnection)
 
         thresh =
-            Random.int 1 10
+            Random.int 1 14
 
         rstate =
             Random.weighted ( 10, Active ) [ ( 100, Passive ) ]
